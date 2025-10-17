@@ -30,7 +30,7 @@ import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Avatar, AvatarFallback } from "./components/ui/avatar";
 import { Editor } from "./components/blocks/editor-00/editor";
 import { createEditor } from "lexical";
-import type { SerializedEditorState, EditorState } from "lexical";
+import type { SerializedEditorState } from "lexical";
 import { $generateHtmlFromNodes } from "@lexical/html";
 import {
   Tooltip,
@@ -142,7 +142,6 @@ export default function App() {
   const [editorState, setEditorState] =
     useState<SerializedEditorState>(initialEditorState);
 
-  const eventSourceRef = useRef<EventSource | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {

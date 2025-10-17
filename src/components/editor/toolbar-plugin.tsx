@@ -40,7 +40,7 @@ export function ToolbarPlugin() {
   const [isItalic, setIsItalic] = useState(false);
   const [isUnderline, setIsUnderline] = useState(false);
   const [isStrikethrough, setIsStrikethrough] = useState(false);
-  const [fontSize, setFontSize] = useState<string>("16px");
+  const [fontSize] = useState<string>("16px");
   const [elementFormat, setElementFormat] = useState<ElementFormatType>("left");
 
   // ✅ FIX: The missing function is now correctly defined here.

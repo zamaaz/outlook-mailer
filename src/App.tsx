@@ -155,7 +155,11 @@ export default function App() {
         const parsedState = editor.parseEditorState(editorState);
         editor.setEditorState(parsedState);
         let html = $generateHtmlFromNodes(editor);
-        html = `<div style="font-family: Aptos, system-ui, sans-serif; font-size: 16px; line-height: 1.5;">${html}</div>`;
+        if (!html.includes("font-size")) {
+          html = `<div style="font-family: Aptos, system-ui, sans-serif; font-size: 16px; line-height: 1.5;">${html}</div>`;
+        } else {
+          html = `<div style="font-family: Aptos, system-ui, sans-serif; line-height: 1.5;">${html}</div>`;
+        }
         setBodyHtml(html.trim());
       }
     } catch (err) {

@@ -120,6 +120,9 @@ export default function App() {
   const [editorKey, setEditorKey] = useState(0);
   const [bodyHtml, setBodyHtml] = useState<string>("");
 
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const MAX_FILE_SIZE_BYTES = 4.5 * 1024 * 1024;
+
   const initialEditorState = {
     root: {
       children: [
@@ -151,7 +154,8 @@ export default function App() {
       if (editorState) {
         const parsedState = editor.parseEditorState(editorState);
         editor.setEditorState(parsedState);
-        const html = $generateHtmlFromNodes(editor);
+        let html = $generateHtmlFromNodes(editor);
+        html = `<div style="font-family: Aptos, system-ui, sans-serif; font-size: 16px; line-height: 1.5;">${html}</div>`;
         setBodyHtml(html.trim());
       }
     } catch (err) {
@@ -164,6 +168,31 @@ export default function App() {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs]);
+
+  const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files ? e.target.files[0] : null;
+
+    if (!file) {
+      setAttachmentFile(null);
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setFileError(
+        `Attachment is too large. Please select a file under 4.5 MB.`
+      );
+
+      setAttachmentFile(null);
+
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
+      return;
+    }
+
+    setFileError(null);
+    setAttachmentFile(file);
+  };
 
   const handleClear = () => {
     setRecipientsFile(null);
@@ -365,14 +394,14 @@ export default function App() {
                   <Label className="font-semibold flex items-center">
                     <Paperclip className="w-4 h-4 mr-2" />
                     Attachment (Optional)
+                    <span className="text-xs text-muted-foreground ml-2 font-normal">
+                      (Max 4.5 MB)
+                    </span>
                   </Label>
                   <Input
+                    ref={attachmentInputRef}
                     type="file"
-                    onChange={(e) =>
-                      setAttachmentFile(
-                        e.target.files ? e.target.files[0] : null
-                      )
-                    }
+                    onChange={handleAttachmentChange}
                     disabled={isSending}
                   />
                   {attachmentFile && (

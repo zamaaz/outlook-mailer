@@ -1,7 +1,6 @@
 "use client";
 
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import { $patchStyleText } from "@lexical/selection";
 import {
   $getSelection,
   $isRangeSelection,
@@ -9,7 +8,13 @@ import {
   SELECTION_CHANGE_COMMAND,
   $isElementNode,
   FORMAT_ELEMENT_COMMAND,
+  createCommand,
+  type LexicalCommand,
 } from "lexical";
+import {
+  $patchStyleText,
+  $getSelectionStyleValueForProperty,
+} from "@lexical/selection";
 import type { ElementFormatType } from "lexical";
 import {
   Bold,
@@ -30,6 +35,9 @@ import {
 } from "@/components/ui/select";
 import { useEffect, useState, useCallback } from "react";
 
+export const APPLY_TEXT_STYLE_COMMAND: LexicalCommand<Record<string, string>> =
+  createCommand();
+
 const FONT_SIZE_OPTIONS = ["12px", "14px", "16px", "18px", "20px", "24px"];
 
 export function ToolbarPlugin() {
@@ -40,60 +48,93 @@ export function ToolbarPlugin() {
   const [isItalic, setIsItalic] = useState(false);
   const [isUnderline, setIsUnderline] = useState(false);
   const [isStrikethrough, setIsStrikethrough] = useState(false);
-  const [fontSize] = useState<string>("16px");
+  const [fontSize, setFontSize] = useState<string>("16px");
   const [elementFormat, setElementFormat] = useState<ElementFormatType>("left");
 
-  // ✅ FIX: The missing function is now correctly defined here.
   const applyStyleText = useCallback(
     (styles: Record<string, string>) => {
-      activeEditor.update(() => {
-        const selection = $getSelection();
-        if ($isRangeSelection(selection)) {
-          $patchStyleText(selection, styles);
-        }
-      });
+      activeEditor.focus();
+      activeEditor.dispatchCommand(APPLY_TEXT_STYLE_COMMAND, styles);
     },
     [activeEditor]
   );
 
   const updateToolbar = useCallback(() => {
-    const selection = $getSelection();
-    if ($isRangeSelection(selection)) {
-      // Update text format states
-      setIsBold(selection.hasFormat("bold"));
-      setIsItalic(selection.hasFormat("italic"));
-      setIsUnderline(selection.hasFormat("underline"));
-      setIsStrikethrough(selection.hasFormat("strikethrough"));
+    activeEditor.getEditorState().read(() => {
+      const selection = $getSelection();
+      if ($isRangeSelection(selection)) {
+        // Update text format states
+        setIsBold(selection.hasFormat("bold"));
+        setIsItalic(selection.hasFormat("italic"));
+        setIsUnderline(selection.hasFormat("underline"));
+        setIsStrikethrough(selection.hasFormat("strikethrough"));
 
-      // Update alignment state
-      const anchorNode = selection.anchor.getNode();
-      const element =
-        anchorNode.getKey() === "root"
-          ? anchorNode
-          : anchorNode.getTopLevelElementOrThrow();
-      if ($isElementNode(element)) {
-        setElementFormat(element.getFormatType());
+        const newSize = $getSelectionStyleValueForProperty(
+          selection,
+          "font-size",
+          "16px"
+        );
+        setFontSize(newSize);
+
+        // Update alignment state
+        const anchorNode = selection.anchor.getNode();
+        const element =
+          anchorNode.getKey() === "root"
+            ? anchorNode
+            : anchorNode.getTopLevelElementOrThrow();
+        if ($isElementNode(element)) {
+          setElementFormat(element.getFormatType());
+        }
       }
-    }
+    });
   }, [activeEditor]);
 
   useEffect(() => {
     return editor.registerCommand(
       SELECTION_CHANGE_COMMAND,
       (_payload, newEditor) => {
-        updateToolbar();
         setActiveEditor(newEditor);
         return false;
       },
       1
     );
-  }, [editor, updateToolbar]);
+  }, [editor]);
+
+  useEffect(() => {
+    return activeEditor.registerCommand(
+      APPLY_TEXT_STYLE_COMMAND,
+      (styles: Record<string, string>) => {
+        const selection = $getSelection();
+        if ($isRangeSelection(selection)) {
+          $patchStyleText(selection, styles);
+        }
+        return true;
+      },
+      0
+    );
+  }, [activeEditor]);
+
+  useEffect(() => {
+    updateToolbar();
+  }, [activeEditor, updateToolbar]);
 
   return (
     <div className="flex flex-wrap items-center gap-1 bg-muted/40 p-2 rounded-t-md">
       <Select
         value={fontSize}
-        onValueChange={(size) => applyStyleText({ "font-size": size })}
+        onValueChange={(newSize) => {
+          activeEditor.focus();
+          activeEditor.update(() => {
+            const selection = $getSelection();
+            if ($isRangeSelection(selection)) {
+              $patchStyleText(selection, { "font-size": newSize });
+            }
+          });
+          setFontSize(newSize);
+          setTimeout(() => {
+            updateToolbar();
+          }, 0);
+        }}
       >
         <SelectTrigger className="w-[100px] h-9">
           <SelectValue placeholder="Font size" />
@@ -111,21 +152,27 @@ export function ToolbarPlugin() {
       <Button
         variant={isBold ? "secondary" : "ghost"}
         size="icon"
-        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold")}
+        onClick={() =>
+          activeEditor.dispatchCommand(FORMAT_TEXT_COMMAND, "bold")
+        }
       >
         <Bold className="w-4 h-4" />
       </Button>
       <Button
         variant={isItalic ? "secondary" : "ghost"}
         size="icon"
-        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic")}
+        onClick={() =>
+          activeEditor.dispatchCommand(FORMAT_TEXT_COMMAND, "italic")
+        }
       >
         <Italic className="w-4 h-4" />
       </Button>
       <Button
         variant={isUnderline ? "secondary" : "ghost"}
         size="icon"
-        onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, "underline")}
+        onClick={() =>
+          activeEditor.dispatchCommand(FORMAT_TEXT_COMMAND, "underline")
+        }
       >
         <Underline className="w-4 h-4" />
       </Button>
@@ -133,7 +180,7 @@ export function ToolbarPlugin() {
         variant={isStrikethrough ? "secondary" : "ghost"}
         size="icon"
         onClick={() =>
-          editor.dispatchCommand(FORMAT_TEXT_COMMAND, "strikethrough")
+          activeEditor.dispatchCommand(FORMAT_TEXT_COMMAND, "strikethrough")
         }
       >
         <Strikethrough className="w-4 h-4" />
@@ -144,7 +191,9 @@ export function ToolbarPlugin() {
         variant={elementFormat === "left" ? "secondary" : "ghost"}
         size="icon"
         title="Align Left"
-        onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "left")}
+        onClick={() =>
+          activeEditor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "left")
+        }
       >
         <AlignLeft className="w-4 h-4" />
       </Button>
@@ -152,7 +201,9 @@ export function ToolbarPlugin() {
         variant={elementFormat === "center" ? "secondary" : "ghost"}
         size="icon"
         title="Align Center"
-        onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "center")}
+        onClick={() =>
+          activeEditor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "center")
+        }
       >
         <AlignCenter className="w-4 h-4" />
       </Button>
@@ -160,7 +211,9 @@ export function ToolbarPlugin() {
         variant={elementFormat === "right" ? "secondary" : "ghost"}
         size="icon"
         title="Align Right"
-        onClick={() => editor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "right")}
+        onClick={() =>
+          activeEditor.dispatchCommand(FORMAT_ELEMENT_COMMAND, "right")
+        }
       >
         <AlignRight className="w-4 h-4" />
       </Button>

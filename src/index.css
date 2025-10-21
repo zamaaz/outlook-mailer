@@ -121,3 +121,8 @@
     outline-offset: 2px;
   }
 }
+
+div[contenteditable="true"] p {
+  margin: 0;
+  line-height: 1.5;
+}

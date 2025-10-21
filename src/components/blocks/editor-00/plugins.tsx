@@ -21,7 +21,7 @@ export function Plugins() {
             </div>
           }
           contentEditable={
-            <div className="relative z-10 min-h-[200px] max-h-[600px] overflow-y-auto p-4 focus:outline-none">
+            <div className="relative z-10 min-h-[200px] max-h-[600px] overflow-y-auto p-4 focus:outline-none font-sans">
               <ContentEditable />
             </div>
           }

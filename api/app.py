@@ -1,62 +1,52 @@
 import os
-import sys
-import base64
 import json
 import time
 import re
 import csv
 import io
 import traceback
+import base64
 import requests
-from flask import Flask, request, jsonify, Response, stream_with_context
+from flask import Flask, request, Response
 from flask_cors import CORS
 from openpyxl import load_workbook
-from io import BytesIO
-from threading import Thread
-from queue import Queue
-
 
 app = Flask(__name__)
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-# Allow requests from your React app's origin
 CORS(app, resources={r"/api/*": {"origins": [FRONTEND_URL, "http://localhost:5173"]}})
-
-def log(msg):
-    print(msg, flush=True)
 
 def is_valid_email(addr):
     return isinstance(addr, str) and re.match(r"[^@]+@[^@]+\.[^@]+", addr)
 
 def read_recipients_from_bytes(file_bytes, file_name):
     found_emails = set()
-    
     try:
-        if file_name.endswith('.csv'):
-            file_text = io.StringIO(file_bytes.decode('utf-8'))
+        if file_name.endswith(".csv"):
+            file_text = io.StringIO(file_bytes.decode("utf-8"))
             reader = csv.reader(file_text)
             for row in reader:
                 for cell_value in row:
-                    cell_value = cell_value.strip()
+                    cell_value = (cell_value or "").strip()
                     if is_valid_email(cell_value):
                         found_emails.add(cell_value)
-        
-        elif file_name.endswith('.xlsx') or file_name.endswith('.xls'):
+
+        elif file_name.endswith(".xlsx") or file_name.endswith(".xls"):
             wb = load_workbook(filename=io.BytesIO(file_bytes), read_only=True)
             ws = wb.active
+            if ws is None:
+                raise ValueError("Worksheet is None — no active sheet found.")
+
             for row in ws.iter_rows():
                 for cell in row:
-                    cell_value = str(cell.value).strip()
+                    cell_value = str(cell.value or "").strip()
                     if is_valid_email(cell_value):
                         found_emails.add(cell_value)
-        
         else:
-            return None 
-
-    except Exception as e:
+            return None
+    except Exception:
         traceback.print_exc()
         return None
-
     return list(found_emails) if found_emails else None
 
 @app.route("/api/send-emails-stream", methods=["POST"])
@@ -71,7 +61,7 @@ def stream_emails():
     
     auth_header = request.headers.get("Authorization")
     subject = request.form.get("subject")
-    body_html = request.form.get("bodyHtml")
+    body_text = request.form.get("bodyText") or ""
     delay = int(request.form.get("delay", 5))
 
     def generate_events(token_header, sub, body, del_val, rec_bytes, rec_filename, att_bytes, att_filename):
@@ -110,7 +100,7 @@ def stream_emails():
                 email_msg = { 
                     "message": { 
                         "subject": sub, 
-                        "body": {"contentType": "HTML", "content": body}, 
+                        "body": {"contentType": "Text", "content": body_text},
                         "toRecipients": [{"emailAddress": {"address": email}}], 
                         "attachments": [] 
                     }, 
@@ -146,8 +136,5 @@ def stream_emails():
             yield format_event("error", {"message": str(e)})
 
     return Response(generate_events(
-        auth_header, subject, body_html, delay, recipients_bytes, recipients_filename, attachment_bytes, attachment_filename
+        auth_header, subject, body_text, delay, recipients_bytes, recipients_filename, attachment_bytes, attachment_filename
     ), mimetype='text/event-stream')
-
-if __name__ == "__main__":
-    app.run(port=5000, debug=True)

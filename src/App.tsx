@@ -28,10 +28,6 @@ import {
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "./components/ui/alert";
 import { Avatar, AvatarFallback } from "./components/ui/avatar";
-import { Editor } from "./components/blocks/editor-00/editor";
-import { createEditor } from "lexical";
-import type { SerializedEditorState } from "lexical";
-import { $generateHtmlFromNodes } from "@lexical/html";
 import {
   Tooltip,
   TooltipContent,
@@ -64,7 +60,7 @@ const AuthComponent = () => {
   if (isAuthenticated && accounts[0]) {
     return (
       <TooltipProvider>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
           <Tooltip>
             <TooltipTrigger asChild>
               <Avatar className="cursor-pointer">
@@ -75,7 +71,7 @@ const AuthComponent = () => {
             </TooltipTrigger>
             <TooltipContent>
               <p className="font-semibold">{accounts[0].name}</p>
-              <p className="text-muted-foreground">{accounts[0].username}</p>
+              <p className="text-background">{accounts[0].username}</p>
             </TooltipContent>
           </Tooltip>
           <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -117,55 +113,12 @@ export default function App() {
   >([]);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const [showLogs, setShowLogs] = useState(false);
-  const [editorKey, setEditorKey] = useState(0);
-  const [bodyHtml, setBodyHtml] = useState<string>("");
+  const [bodyText, setBodyText] = useState<string>("");
 
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const MAX_FILE_SIZE_BYTES = 4.5 * 1024 * 1024;
 
-  const initialEditorState = {
-    root: {
-      children: [
-        {
-          children: [],
-          direction: null,
-          format: "",
-          indent: 0,
-          type: "paragraph",
-          version: 1,
-        },
-      ],
-      direction: null,
-      format: "",
-      indent: 0,
-      type: "root",
-      version: 1,
-    },
-  } as unknown as SerializedEditorState;
-  const [editorState, setEditorState] =
-    useState<SerializedEditorState>(initialEditorState);
-
   const abortControllerRef = useRef<AbortController | null>(null);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    try {
-      const editor = createEditor();
-      if (editorState) {
-        const parsedState = editor.parseEditorState(editorState);
-        editor.setEditorState(parsedState);
-        let html = $generateHtmlFromNodes(editor);
-        if (!html.includes("font-size")) {
-          html = `<div style="font-family: Aptos, system-ui, sans-serif; font-size: 16px; line-height: 1.5;">${html}</div>`;
-        } else {
-          html = `<div style="font-family: Aptos, system-ui, sans-serif; line-height: 1.5;">${html}</div>`;
-        }
-        setBodyHtml(html.trim());
-      }
-    } catch (err) {
-      console.error("Failed to export editor HTML:", err);
-    }
-  }, [editorState, isAuthenticated]);
 
   useEffect(() => {
     if (logContainerRef.current) {
@@ -185,12 +138,8 @@ export default function App() {
       setFileError(
         `Attachment is too large. Please select a file under 4.5 MB.`
       );
-
       setAttachmentFile(null);
-
-      if (attachmentInputRef.current) {
-        attachmentInputRef.current.value = "";
-      }
+      if (attachmentInputRef.current) attachmentInputRef.current.value = "";
       return;
     }
 
@@ -201,8 +150,8 @@ export default function App() {
   const handleClear = () => {
     setRecipientsFile(null);
     setAttachmentFile(null);
-    setSubject("Important Company Update");
-    setEditorState(initialEditorState);
+    setSubject("");
+    setBodyText("");
     setDelay(5);
     setStatus("idle");
     setFileError(null);
@@ -211,7 +160,6 @@ export default function App() {
     setSentCount(0);
     setFailedCount(0);
     setResults([]);
-    setEditorKey((prevKey) => prevKey + 1);
   };
 
   const handleCancel = () => {
@@ -224,7 +172,11 @@ export default function App() {
   };
 
   const handleSend = async () => {
-    // 1. Reset State
+    if (!recipientsFile) {
+      setFileError("Please select a recipient Excel file.");
+      return;
+    }
+
     setFileError(null);
     setLogs([]);
     setResults([]);
@@ -232,15 +184,6 @@ export default function App() {
     setStatus("sending");
     setLogs(["Starting process..."]);
 
-    // 2. Validation
-    if (!recipientsFile) {
-      setFileError("Please select a recipient Excel file.");
-      setStatus("error");
-      return;
-    }
-    // ... other validations
-
-    // Create a new AbortController for this request
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
@@ -254,10 +197,9 @@ export default function App() {
       formData.append("recipientsFile", recipientsFile);
       if (attachmentFile) formData.append("attachmentFile", attachmentFile);
       formData.append("subject", subject);
-      formData.append("bodyHtml", bodyHtml);
+      formData.append("bodyText", bodyText);
       formData.append("delay", String(delay));
 
-      // ✅ 3. Use fetch to POST data and stream the response
       const response = await fetch(`${API_BASE_URL}/send-emails-stream`, {
         method: "POST",
         headers: { Authorization: `Bearer ${tokenResponse.accessToken}` },
@@ -265,11 +207,8 @@ export default function App() {
         signal: controller.signal,
       });
 
-      if (!response.body) {
-        throw new Error("Response body is missing.");
-      }
+      if (!response.body) throw new Error("Response body is missing.");
 
-      // ✅ 4. Read the live stream
       const reader = response.body
         .pipeThrough(new TextDecoderStream())
         .getReader();
@@ -289,7 +228,6 @@ export default function App() {
             const parsedData = JSON.parse(jsonString);
             const { type, data } = parsedData;
 
-            // This is the same logic from the previous EventSource attempt
             if (type === "log") {
               setLogs((prev) => [...prev, `STATUS: ${data}`]);
             } else if (type === "progress") {
@@ -338,7 +276,7 @@ export default function App() {
         console.error(error);
       }
     } finally {
-      abortControllerRef.current = null; // Clean up the ref
+      abortControllerRef.current = null;
     }
   };
 
@@ -346,21 +284,22 @@ export default function App() {
   const isFinished = status === "success" || status === "error";
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-background text-foreground p-8">
-      <Card className="w-full xl:w-[1400px] mx-auto border shadow-lg rounded-xl bg-card/80 backdrop-blur-md p-8">
-        <CardHeader className="flex flex-row items-center justify-between pb-4 border-b">
-          <div className="flex items-center space-x-3">
-            <Mail className="w-8 h-8 text-primary" />
+    <div className="min-h-screen w-full flex items-center justify-center bg-background text-foreground px-4 sm:px-6 md:px-8 py-8 transition-all">
+      <Card className="w-full max-w-[95vw] sm:max-w-[700px] md:max-w-[900px] lg:max-w-[1100px] xl:max-w-[1400px] mx-auto border shadow-lg rounded-xl bg-card/80 backdrop-blur-md p-4 m-2 sm:p-6 md:p-8 transition-all">
+        <CardHeader className="flex flex-col sm:flex-row items-center justify-between pb-4 border-b gap-3 sm:gap-0 mt-6">
+          <div className="flex items-center justify-center md:justify-start space-x-3">
+            <Mail className="w-7 h-7 text-primary shrink-0" />
             <div>
-              <CardTitle className="text-2xl font-bold">
+              <CardTitle className="text-xl sm:text-2xl font-bold leading-tight">
                 Outlook Web Mailer
               </CardTitle>
-              <CardDescription>
+              <CardDescription className="text-xs sm:text-base">
                 Send bulk emails using Microsoft Graph API
               </CardDescription>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+
+          <div className="flex items-center justify-center sm:justify-end gap-2 sm:gap-3">
             <AuthComponent />
             <ThemeToggle />
           </div>
@@ -368,8 +307,8 @@ export default function App() {
 
         {isAuthenticated ? (
           <>
-            <CardContent className="space-y-6 mt-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
                 <div className="space-y-2">
                   <Label className="font-semibold flex items-center">
                     <Upload className="w-4 h-4 mr-2" />
@@ -430,11 +369,12 @@ export default function App() {
 
               <div className="space-y-2">
                 <Label>Email Body</Label>
-                <Editor
-                  key={editorKey}
-                  editorSerializedState={editorState}
-                  onSerializedChange={setEditorState}
-                  onHtmlChange={setBodyHtml}
+                <textarea
+                  value={bodyText}
+                  onChange={(e) => setBodyText(e.target.value)}
+                  placeholder="Enter email body"
+                  className="w-full min-h-[200px] sm:min-h-[250px] border rounded-md p-3 font-sans text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-y"
+                  disabled={isSending}
                 />
               </div>
 
@@ -459,8 +399,8 @@ export default function App() {
               </div>
             </CardContent>
 
-            <CardFooter className="flex flex-col items-stretch space-y-4">
-              <div className="flex w-full gap-3">
+            <CardFooter className="flex flex-col items-stretch space-y-4 mb-6">
+              <div className="flex flex-col sm:flex-row w-full gap-3">
                 <Button
                   onClick={handleSend}
                   disabled={isSending}
@@ -496,7 +436,7 @@ export default function App() {
               </div>
 
               {logs.length > 0 && (
-                <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/50">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -512,25 +452,19 @@ export default function App() {
                     className="text-xs"
                     disabled={results.length === 0}
                     onClick={() => {
-                      // Define CSV headers
                       const csvRows = [
                         ["Email", "Status", "Timestamp"],
-                        // Map the results array to rows
                         ...results.map((r) => [r.email, r.status, r.time]),
                       ];
-
-                      // Convert array of arrays to a single CSV string
                       const csvContent =
                         "data:text/csv;charset=utf-8," +
                         csvRows.map((r) => r.join(",")).join("\n");
-
-                      // Create a temporary link element to trigger the download
                       const link = document.createElement("a");
                       link.href = encodeURI(csvContent);
                       link.download = `mail_report_${new Date()
                         .toISOString()
                         .replace(/[:.]/g, "-")}.csv`;
-                      link.click(); // Programmatically click the link
+                      link.click();
                     }}
                   >
                     <FileText className="w-4 h-4 mr-2" />
@@ -542,7 +476,7 @@ export default function App() {
               {showLogs && (
                 <div
                   ref={logContainerRef}
-                  className="mt-2 w-full p-3 bg-slate-900 rounded-md max-h-48 overflow-y-auto text-xs font-mono"
+                  className="mt-2 w-full p-3 bg-slate-900 rounded-md max-h-40 sm:max-h-56 md:max-h-72 overflow-y-auto text-xs font-mono"
                 >
                   {logs.map((log, i) => (
                     <p
